@@ -1,0 +1,59 @@
+{
+  "cleanupPeriodDays": 90,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "model": "opusplan",
+  "awsAuthRefresh": "bin/awslogin",
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "900000",
+    "BASH_MAX_TIMEOUT_MS": "900000",
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
+    "DISABLE_TELEMETRY": "1",
+    "ENABLE_LSP_TOOL": "1",
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "AWS_REGION": "eu-west-1",
+    "AWS_PROFILE": "staging",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "eu.anthropic.claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "eu.anthropic.claude-opus-4-6-v1",
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(git status)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(bundle:*)",
+      "Bash(yarn)",
+      "Bash(yarn test:*)",
+      "Bash(yarn test_auto:*)",
+      "Bash(bin/rspec:*)",
+      "Bash(bin/rspec-auto:*)",
+      "Bash(bin/pull)",
+      "Bash(bin/cleanup)",
+      "Bash(bin/pr_status:*)",
+      "Bash(bin/help)",
+      "Bash(jq)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/.ssh/**)",
+      "Read(**/.aws/**)"
+    ],
+    "ask": [
+      "Bash(curl:*)",
+      "Read(~/.zshrc)",
+      "Read(~/.bashrc)"
+    ]
+  },
+  "hooks": {}
+}
