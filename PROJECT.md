@@ -39,16 +39,16 @@ L'application suit un parcours en deux phases naturelles :
   - Nom
   - Quantite **par personne** (ex: 1 oeuf, 100g de poulet)
   - Unite
-  - Comportement de scaling : lineaire pour la plupart des ingredients, sub-lineaire pour les epices et assaisonnements, fixe pour certains elements (ex: une feuille de laurier)
+  - Comportement de scaling : stocke comme un exposant float (`scaling_factor`) — 1.0 = lineaire, ~0.6 = sub-lineaire (epices, assaisonnements), 0.0 = fixe (ex: une feuille de laurier). Formule : `qty_per_person * baseServings * (displayServings / baseServings) ^ scaling_factor`. Implementee dans `src/lib/scaling.ts` (`scaleQuantity`) — utilisee dans la fiche recette (ajusteur de portions) et reutilisee en M4 (liste de courses).
   - Rayon de supermarche (reference vers l'ontologie des rayons)
 - Nombre de personnes recommande
 - Temps de preparation
-- Saisonnalite : plage de mois (ex: "juin-septembre"), determinee automatiquement par les ingredients
-  - Architecture de donnees prevue pour supporter plusieurs regions (France par defaut)
+- Saisonnalite : plage de mois (ex: juin-septembre), determinee automatiquement par les ingredients et stockee sur la recette (recomputee a chaque modification des ingredients)
+  - Note : multi-region hors scope MVP — necessite une table `ingredient_seasonality` dediee, pas une simple colonne
+- Photo : stockee dans Supabase Storage (chemin enregistre dans `image_url`)
 - Etapes de preparation :
-  - Etapes groupees par parallelisme : les etapes partageant le meme groupe peuvent etre realisees simultanement (affichage type "pendant ce temps...")
-  - Ordre recommande
-  - Reference aux ingredients utilises a chaque etape (hover ou autre UX pertinent pour voir les quantites)
+  - Etapes avec `step_order` (sequence) et `parallel_group` optionnel (meme groupe = simultane, affichage "pendant ce temps...")
+  - Les references aux ingredients dans les etapes sont resolues cote frontend par matching textuel (pas de stockage en DB)
 - Tags de regime alimentaire : auto-detectes a partir des ingredients (vegetarien, vegan, sans gluten, etc.) + filtrables
 - Score nutritionnel :
   - Score visuel en surface (type indicateur rapide)
@@ -92,8 +92,8 @@ L'application suit un parcours en deux phases naturelles :
 ### 4. Liste de courses
 
 - Generee automatiquement a partir du planning
-- Ingredients agreges (si 2 recettes utilisent des oignons, les quantites sont sommees, en tenant compte du comportement de scaling de chaque ingredient)
-- Quantites ajustees au nombre de parts choisi pour chaque recette
+- Ingredients agreges (si 2 recettes utilisent des oignons, les quantites sont sommees, en tenant compte du comportement de scaling de chaque ingredient via `scaleQuantity` de `src/lib/scaling.ts`)
+- Quantites ajustees au nombre de parts choisi pour chaque recette (meme formule que l'ajusteur de la fiche recette)
 - Regroupement par rayon de supermarche (via l'ontologie des rayons)
 - Checkboxes interactives pour cocher en faisant les courses (usage mobile en magasin)
 - Tooltip sur chaque ingredient indiquant le rayon/emplacement
@@ -111,21 +111,29 @@ L'application suit un parcours en deux phases naturelles :
 Toutes les entites partagees sont normalisees en DB pour eviter les doublons. Le LLM doit toujours chercher dans l'existant avant de creer. Si une entite n'existe pas, il la propose et l'utilisateur valide.
 
 ### Ingredients
-- Table dediee : `ingredients` (id, nom, rayon_id, saisonnalite_debut, saisonnalite_fin, region)
+- Table dediee : `ingredients` (id, name, aisle_id, season_start, season_end)
+- Pas de colonne `region` — le multi-region necessite une table `ingredient_seasonality(ingredient_id, region, season_start, season_end)` dediee (hors scope MVP)
 - Un ingredient est une entite unique reutilisee entre toutes les recettes
-- Les recettes referencent les ingredients via une table de liaison `recipe_ingredients` (recipe_id, ingredient_id, quantite_par_personne, unite, scaling_factor)
+- Les recettes referencent les ingredients via une table de liaison `recipe_ingredients` (recipe_id, ingredient_id, quantity_per_person, unit, scaling_factor)
 - Quand le LLM ajoute un ingredient a une recette, il cherche d'abord dans les ingredients existants. S'il n'existe pas, il propose la creation (avec rayon, saisonnalite, etc.)
 
 ### Tags de regime alimentaire
-- Table dediee : `dietary_tags` (id, nom, description)
-- Pre-seedes : vegetarien, vegan, sans gluten, sans lactose, pescetarien, halal, casher, etc.
+- Table dediee : `dietary_tags` (id, slug)
+- `slug` = cle i18n (ex: `"vegetarian"`, `"gluten_free"`) — labels localises dans `src/i18n/en.json` / `src/i18n/fr.json`
+- Pre-seedes : vegetarian, vegan, gluten_free, lactose_free, pescatarian, halal, kosher
 - Auto-detectes a partir des ingredients de la recette
 - Evolutifs avec validation utilisateur si le LLM propose un nouveau tag
 
 ### Rayons
-- Table dediee : `aisles` (id, nom)
-- Pre-seedes avec les rayons standards
+- Table dediee : `aisles` (id, slug)
+- `slug` = cle i18n (ex: `"butcher"`, `"fruits_vegetables"`) — labels localises dans `src/i18n/`
+- Pre-seedes avec les rayons standards (15 rayons)
 - Evolutifs avec validation utilisateur
+
+### Score nutritionnel
+- `nutrition_score smallint` sur `recipes` : indicateur 0-100 pour affichage rapide
+- `nutrition_data jsonb` sur `recipes` : macros detailles `{ calories, protein, carbs, fat, fiber, ... }`, estimation LLM
+- Requetable via `(nutrition_data->>'calories')::int` avec index GIN si besoin
 
 ### 5. Page d'accueil
 
@@ -158,7 +166,7 @@ Toutes les entites partagees sont normalisees en DB pour eviter les doublons. Le
 1. **L'IA comme agent, pas comme chat** : le LLM manipule directement l'interface via des tools, pas du texte brut
 2. **Live preview** : la creation d'une recette est visible en temps reel (streaming progressif des champs)
 3. **Streaming creation + post-edit** : l'IA cree en temps reel, l'utilisateur edite apres. L'utilisateur peut aussi re-engager l'IA sur une recette existante pour iterer.
-4. **Quantites par personne avec scaling intelligent** : les quantites sont stockees par personne avec un comportement de scaling par ingredient (lineaire, sub-lineaire, ou fixe)
+4. **Quantites par personne avec scaling intelligent** : les quantites sont stockees par personne avec un `scaling_factor` float (exposant de puissance) par ingredient — 1.0 = lineaire, ~0.6 = sub-lineaire, 0.0 = fixe
 5. **UX minimaliste** : chaque interaction doit etre la plus simple possible (un clic pour supprimer un slot, etc.)
 
 ---

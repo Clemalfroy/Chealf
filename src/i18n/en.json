@@ -1,0 +1,40 @@
+{
+  "aisles": {
+    "fruits_vegetables": "Fruits & Vegetables",
+    "butcher": "Butcher",
+    "fishmonger": "Fishmonger",
+    "dairy": "Dairy",
+    "savory_grocery": "Savory Grocery",
+    "sweet_grocery": "Sweet Grocery",
+    "fresh_products": "Fresh Products",
+    "frozen": "Frozen",
+    "beverages": "Beverages",
+    "bakery": "Bakery",
+    "condiments_sauces": "Condiments & Sauces",
+    "canned_goods": "Canned Goods",
+    "oils_vinegars": "Oils & Vinegars",
+    "pasta_rice_cereals": "Pasta, Rice & Cereals",
+    "world_foods": "World Foods"
+  },
+  "dietary_tags": {
+    "vegetarian": "Vegetarian",
+    "vegan": "Vegan",
+    "gluten_free": "Gluten-Free",
+    "lactose_free": "Lactose-Free",
+    "pescatarian": "Pescatarian",
+    "halal": "Halal",
+    "kosher": "Kosher"
+  },
+  "tool_status": {
+    "createRecipe": "Creating recipe",
+    "setRecipeTitle": "Setting title",
+    "setRecipeServings": "Setting servings",
+    "setRecipePrepTime": "Setting prep time",
+    "searchIngredients": "Searching ingredients",
+    "addIngredient": "Adding ingredient",
+    "updateIngredient": "Updating ingredient",
+    "removeIngredient": "Removing ingredient",
+    "setSteps": "Setting steps",
+    "setDietaryTags": "Setting dietary tags"
+  }
+}

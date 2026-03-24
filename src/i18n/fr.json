@@ -1,0 +1,40 @@
+{
+  "aisles": {
+    "fruits_vegetables": "Fruits & Légumes",
+    "butcher": "Boucherie",
+    "fishmonger": "Poissonnerie",
+    "dairy": "Crémerie",
+    "savory_grocery": "Épicerie salée",
+    "sweet_grocery": "Épicerie sucrée",
+    "fresh_products": "Produits frais",
+    "frozen": "Surgelés",
+    "beverages": "Boissons",
+    "bakery": "Boulangerie",
+    "condiments_sauces": "Condiments & Sauces",
+    "canned_goods": "Conserves",
+    "oils_vinegars": "Huiles & Vinaigres",
+    "pasta_rice_cereals": "Pâtes, Riz & Céréales",
+    "world_foods": "Produits du monde"
+  },
+  "dietary_tags": {
+    "vegetarian": "Végétarien",
+    "vegan": "Vegan",
+    "gluten_free": "Sans gluten",
+    "lactose_free": "Sans lactose",
+    "pescatarian": "Pescétarien",
+    "halal": "Halal",
+    "kosher": "Casher"
+  },
+  "tool_status": {
+    "createRecipe": "Création de la recette",
+    "setRecipeTitle": "Titre mis à jour",
+    "setRecipeServings": "Nombre de personnes",
+    "setRecipePrepTime": "Temps de préparation",
+    "searchIngredients": "Recherche d'ingrédients",
+    "addIngredient": "Ajout d'un ingrédient",
+    "updateIngredient": "Modification d'un ingrédient",
+    "removeIngredient": "Suppression d'un ingrédient",
+    "setSteps": "Étapes de préparation",
+    "setDietaryTags": "Régimes alimentaires"
+  }
+}

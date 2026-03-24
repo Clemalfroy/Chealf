@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -224,4 +225,51 @@
   html {
     @apply font-sans;
   }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Compact prose for AI chat bubbles */
+.chat-prose {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.chat-prose p {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.chat-prose p:first-child {
+  margin-top: 0;
+}
+.chat-prose p:last-child {
+  margin-bottom: 0;
+}
+.chat-prose ul,
+.chat-prose ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  padding-left: 1.25rem;
+}
+.chat-prose li {
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+}
+.chat-prose strong {
+  font-weight: 600;
+}
+.chat-prose code {
+  border-radius: 0.25rem;
+  background-color: var(--muted);
+  padding: 0.125rem 0.25rem;
+  font-family: var(--font-geist-mono);
+  font-size: 0.75rem;
 }

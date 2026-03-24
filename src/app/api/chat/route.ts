@@ -1,18 +1,19 @@
-import { streamText } from "ai";
+import { streamText, convertToModelMessages } from "ai";
+import type { UIMessage } from "ai";
 import { verifySession } from "@/lib/dal";
 import { getDefaultModel, buildSystemPrompt } from "@/lib/ai";
 
 export async function POST(request: Request) {
   await verifySession();
 
-  const { messages } = await request.json();
+  const body = await request.json();
+  const messages: UIMessage[] = body.messages ?? [];
 
   const result = streamText({
     model: getDefaultModel(),
     system: buildSystemPrompt(),
-    messages,
-    // Tools will be added in M1.2 (recipe assistant)
+    messages: await convertToModelMessages(messages),
   });
 
-  return result.toTextStreamResponse();
+  return result.toUIMessageStreamResponse();
 }

@@ -89,12 +89,25 @@ M5: Home Page (adaptive landing)
 - Recipe card component + recipe detail page
 - Ingredient management (search existing, create new with aisle assignment)
 
-**1.2 - AI recipe assistant**
-- API route for recipe chat (streaming + tool calling)
-- LLM tools: `fillRecipeTitle`, `addIngredient`, `removeIngredient`, `setSteps`, `setServings`, `setPrepTime`, `setNutrition`
-- Split-pane UI: chat input bottom + live recipe preview top
-- Streaming field updates (fields fill in real-time as tools are called)
+**1.2 - AI recipe assistant** ✅
+- Dedicated `/api/chat/recipe` route (streaming + multi-step tool calling with `stepCountIs(10)`)
+- LLM tools: `createRecipe`, `setRecipeTitle`, `setRecipeServings`, `setRecipePrepTime`, `searchIngredients`, `addIngredient`, `updateIngredient`, `removeIngredient`, `setSteps`, `setDietaryTags`
+- 3-mode `RecipeEditor`: `view` / `edit` / `streaming` (fade-in animations in streaming mode)
+- `RecipeWorkspace` (state owner) + `RecipeChatPanel` (tool sync via `mapToolResultToAction`)
+- BE consistency checks: duplicate ingredient detection, step order gaps
+- Context-specific system prompts via `AssistantContext` (`buildSystemPrompt({ context: "recipe" })`)
+- Split-pane UI: floating chat input on mobile, sticky sidebar on desktop
 - Re-engage AI on existing recipes ("make this lighter", "replace cream with coconut milk")
+- **Deferred to M1.4:** cascading recomputations after ingredient changes (dietary tags, seasonality, nutrition)
+
+**1.2.1 - UX polish** ✅
+- Markdown rendering in AI chat messages (`react-markdown` + `remark-gfm`)
+- Fixed streaming `fadeInUp` animation (keyframe was missing from `globals.css`)
+- Servings adjuster: inline `[-] N pers. [+]` stepper in view/streaming mode with live quantity scaling
+- Smart fraction formatting for ingredient quantities (½, ¼, ¾, ⅓, ⅔, ⅛)
+- Parallel steps timeline: vertical connector with "Pendant ce temps..." badge
+- Tool activity pills in chat showing real-time tool execution status (spinner → checkmark)
+- `src/lib/format.ts` (`formatQuantity`) + `src/lib/scaling.ts` (`scaleQuantity`) — reused by M4 shopping list
 
 **1.3 - Image generation**
 - DALL-E 3 integration for recipe photos
@@ -104,7 +117,9 @@ M5: Home Page (adaptive landing)
 **1.4 - Smart features**
 - Auto-detect dietary tags from ingredients
 - Seasonality calculation from ingredients
-- Nutritional score estimation (LLM-based)
+- Nutritional score estimation (LLM-based) — `setNutrition` tool
+- **Cascading recomputations:** after ingredient changes, auto-recompute dietary tags, seasonality, nutrition
+- **Chat history persistence:** `recipe_chat_messages` table — store and reload conversation per recipe
 - AI memory: extract and store user preference facts (`ai_memory_facts` table)
 - User guidelines: base profile + contextual guidelines (`user_guidelines` table)
 
@@ -143,6 +158,7 @@ M5: Home Page (adaptive landing)
 - LLM picks from existing recipes only
 - Planning presets ("balanced", "high protein", "light weekdays")
 - Real-time calendar updates as tools are called
+- **Extract generic `ChatPanel`** from `RecipeChatPanel` (currently recipe-specific) for reuse across recipe/planning/shopping contexts
 
 **3.3 - Plan persistence**
 - Save/load weekly plans
@@ -185,9 +201,10 @@ M5: Home Page (adaptive landing)
   - [x] 0.3 AI SDK setup
   - [x] 0.4 Shared UI components
 - [ ] **Milestone 1: Recipe Creation**
-  - [ ] 1.0 Database tables for recipes
-  - [ ] 1.1 Recipe CRUD
-  - [ ] 1.2 AI recipe assistant
+  - [x] 1.0 Database tables for recipes
+  - [x] 1.1 Recipe CRUD
+  - [x] 1.2 AI recipe assistant
+  - [x] 1.2.1 UX polish (markdown chat, servings adjuster, fractions, parallel timeline, tool pills)
   - [ ] 1.3 Image generation
   - [ ] 1.4 Smart features
 - [ ] **Milestone 2: Recipe Library + Search**
