@@ -28,6 +28,8 @@ export const addIngredientSchema = z.object({
   name: z.string().min(1),
   ingredient_id: z.string().uuid().optional(),
   aisle_id: z.string().uuid().optional(),
+  season_start: z.number().int().min(1).max(12).nullable().optional(),
+  season_end: z.number().int().min(1).max(12).nullable().optional(),
   quantity_per_person: z.number().positive(),
   unit: z.string().min(1),
   scaling_factor: z.number().min(0).max(2).default(1.0),
@@ -62,6 +64,35 @@ export const updateIngredientSchema = z.object({
   scaling_factor: z.number().min(0).max(2).optional(),
 });
 
+export const setSeasonalitySchema = z.object({
+  recipeId: z.string().uuid(),
+  season_start: z.number().int().min(1).max(12).nullable(),
+  season_end: z.number().int().min(1).max(12).nullable(),
+});
+
+const nutritionDataSchema = z.object({
+  calories: z.number().int().min(0),
+  protein: z.number().int().min(0),
+  carbs: z.number().int().min(0),
+  fat: z.number().int().min(0),
+  fiber: z.number().int().min(0),
+});
+
+export const setNutritionSchema = z.object({
+  recipeId: z.string().uuid(),
+  nutrition_score: z.number().int().min(0).max(100),
+  nutrition_data: nutritionDataSchema,
+});
+
+export const generateImageSchema = z.object({
+  recipeId: z.string().uuid(),
+  prompt: z.string().min(10).max(1000),
+});
+
+export type NutritionData = z.infer<typeof nutritionDataSchema>;
+export type SetSeasonalityInput = z.infer<typeof setSeasonalitySchema>;
+export type SetNutritionInput = z.infer<typeof setNutritionSchema>;
+
 // ─── Composite schema for form save (batches all operations) ───────────────────
 
 const recipeIngredientInput = z.object({
@@ -84,6 +115,10 @@ export const saveRecipeSchema = z.object({
   title: z.string().min(1).max(200),
   servings: z.number().int().min(1).max(50).optional(),
   prep_time: z.number().int().min(1).max(1440).optional(),
+  season_start: z.number().int().min(1).max(12).nullable().optional(),
+  season_end: z.number().int().min(1).max(12).nullable().optional(),
+  nutrition_score: z.number().int().min(0).max(100).nullable().optional(),
+  nutrition_data: nutritionDataSchema.nullable().optional(),
   ingredients: z.array(recipeIngredientInput),
   steps: z.array(recipeStepInput),
   dietary_tag_ids: z.array(z.string().uuid()),
@@ -101,3 +136,4 @@ export type SetStepsInput = z.infer<typeof setStepsSchema>;
 export type SetDietaryTagsInput = z.infer<typeof setDietaryTagsSchema>;
 export type SaveRecipeInput = z.infer<typeof saveRecipeSchema>;
 export type UpdateIngredientInput = z.infer<typeof updateIngredientSchema>;
+export type GenerateImageInput = z.infer<typeof generateImageSchema>;

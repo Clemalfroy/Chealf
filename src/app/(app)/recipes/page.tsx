@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ChefHat, Plus } from "lucide-react";
 import { verifySession } from "@/lib/dal";
 import { getRecipesByUserId } from "@/lib/recipes/queries";
 import { RecipeCard } from "@/components/recipes/recipe-card";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { EmptyState } from "@/components/ui/empty-state";
+import { t } from "@/lib/i18n";
 
 export default async function RecipesPage() {
   const { user } = await verifySession();
@@ -24,15 +26,17 @@ export default async function RecipesPage() {
 
       {/* Grid / Empty state */}
       {recipes.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 py-16 text-center">
-          <p className="text-muted-foreground">
-            Vous n&apos;avez pas encore de recettes.
-          </p>
-          <Link href="/recipes/new" className={buttonVariants({ variant: "outline" })}>
-            <Plus className="mr-1.5" />
-            Créer ma première recette
-          </Link>
-        </div>
+        <EmptyState
+          icon={ChefHat}
+          headline={t("empty_state", "recipes_headline")}
+          description={t("empty_state", "recipes_description")}
+          action={
+            <Link href="/recipes/new" className={buttonVariants()}>
+              <Plus className="mr-1.5" />
+              {t("empty_state", "recipes_cta")}
+            </Link>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {recipes.map((recipe) => (

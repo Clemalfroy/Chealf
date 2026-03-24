@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatQuantity } from "../format";
+import { formatQuantity, formatSeasonRange } from "../format";
 
 describe("formatQuantity", () => {
   it("returns '0' for zero", () => {
@@ -65,5 +65,35 @@ describe("formatQuantity", () => {
   it("matches within tolerance (0.02)", () => {
     expect(formatQuantity(0.51)).toBe("½");
     expect(formatQuantity(0.49)).toBe("½");
+  });
+});
+
+describe("formatSeasonRange", () => {
+  it("returns null when start is null", () => {
+    expect(formatSeasonRange(null, 9)).toBeNull();
+  });
+
+  it("returns null when end is null", () => {
+    expect(formatSeasonRange(6, null)).toBeNull();
+  });
+
+  it("returns null when both are null", () => {
+    expect(formatSeasonRange(null, null)).toBeNull();
+  });
+
+  it("formats a summer range (6–9)", () => {
+    expect(formatSeasonRange(6, 9)).toBe("jun–sep");
+  });
+
+  it("formats a winter cross-year range (11–2)", () => {
+    expect(formatSeasonRange(11, 2)).toBe("nov–fév");
+  });
+
+  it("formats a single-month range (same start and end)", () => {
+    expect(formatSeasonRange(5, 5)).toBe("mai–mai");
+  });
+
+  it("formats full year range (1–12)", () => {
+    expect(formatSeasonRange(1, 12)).toBe("jan–déc");
   });
 });

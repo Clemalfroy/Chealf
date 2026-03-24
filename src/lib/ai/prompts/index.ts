@@ -26,6 +26,8 @@ export type SystemPromptOptions = {
   memoryFacts?: string[];
   /** Compact serialized state of the recipe currently being edited */
   recipeContext?: string;
+  /** All available aisles with their IDs — injected so the LLM can fill aisle_id */
+  aisles?: Array<{ id: string; slug: string; label: string }>;
 };
 
 /**
@@ -48,6 +50,15 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
   if (options.userGuidelines && options.userGuidelines.length > 0) {
     segments.push(
       `## Guidelines actives\n${options.userGuidelines.map((g) => `- ${g}`).join("\n")}`
+    );
+  }
+
+  if (options.aisles && options.aisles.length > 0) {
+    const lines = options.aisles
+      .map((a) => `- ${a.slug} (${a.label}) → ${a.id}`)
+      .join("\n");
+    segments.push(
+      `## Rayons disponibles (utilise ces IDs pour aisle_id dans addIngredient/addIngredients)\n${lines}`
     );
   }
 

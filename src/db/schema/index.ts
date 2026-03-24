@@ -6,4 +6,8 @@ export * from "./recipes";
 export * from "./recipe-ingredients";
 export * from "./recipe-steps";
 export * from "./recipe-dietary-tags";
+export * from "./recipe-chat-messages";
+export * from "./recipe-images";
+export * from "./ai-memory-facts";
+export * from "./user-guidelines";
 export * from "./relations";

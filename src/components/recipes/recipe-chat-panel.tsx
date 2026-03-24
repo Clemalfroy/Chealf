@@ -3,25 +3,32 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart, getToolName } from "ai";
-import { SendHorizontal, Loader2 } from "lucide-react";
+import { SendHorizontal, Loader2, MessageSquarePlus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SuggestionChips } from "@/components/chat/suggestion-chips";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import type { ChatContext } from "@/lib/chat/suggestion-chips";
 import { mapToolResultToAction } from "@/lib/ai/tools/tool-action-map";
+import { saveChatHistoryAction } from "@/app/(app)/recipes/actions";
 import type {
   RecipeEditorState,
   RecipeEditorAction,
 } from "@/components/recipes/recipe-editor";
+import type { UIMessage } from "ai";
 
 type RecipeChatPanelProps = {
   recipeState: RecipeEditorState;
   dispatch: React.Dispatch<RecipeEditorAction>;
   onStreamStart?: () => void;
   onStreamEnd?: () => void;
+  initialMessages?: UIMessage[];
+  context?: ChatContext;
 };
 
 export function RecipeChatPanel({
@@ -29,6 +36,8 @@ export function RecipeChatPanel({
   dispatch,
   onStreamStart,
   onStreamEnd,
+  initialMessages,
+  context = "recipe",
 }: RecipeChatPanelProps) {
   const [input, setInput] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
@@ -41,11 +50,24 @@ export function RecipeChatPanel({
   const recipeStateRef = useRef(recipeState);
   recipeStateRef.current = recipeState;
 
-  // Track which tool call IDs have already been dispatched to avoid double-dispatch
-  const processedCallIds = useRef(new Set<string>());
+  // Track which tool call IDs have already been dispatched to avoid double-dispatch.
+  // Pre-seed with all tool call IDs from initialMessages so that restored chat history
+  // doesn't cause tool results to be re-dispatched on top of state already loaded from DB.
+  const processedCallIds = useRef(new Set<string>(
+    initialMessages?.flatMap((msg) => {
+      if (msg.role !== "assistant") return [];
+      return msg.parts
+        .filter((p) => isToolUIPart(p))
+        .map((p) => (p as unknown as { toolCallId: string }).toolCallId)
+        .filter(Boolean);
+    }) ?? []
+  ));
 
   // Track whether streaming has started so we don't call onStreamStart on every render
   const streamingStartedRef = useRef(false);
+
+  // Keep a ref to the latest messages for use inside onError (which doesn't receive messages)
+  const messagesRef = useRef<UIMessage[]>([]);
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
@@ -53,16 +75,32 @@ export function RecipeChatPanel({
       // Use a function so the latest recipeId is sent even after createRecipe sets it
       body: () => ({ recipeId: recipeIdRef.current }),
     }),
-    onFinish: () => {
+    messages: initialMessages,
+    onFinish: ({ messages: allMessages }) => {
       streamingStartedRef.current = false;
       onStreamEnd?.();
+      // Persist chat history after each LLM response completes
+      const id = recipeIdRef.current;
+      if (id) {
+        saveChatHistoryAction(id, allMessages).catch(() => {
+          // Silent failure — history save is non-critical
+        });
+      }
     },
     onError: (error) => {
       streamingStartedRef.current = false;
       onStreamEnd?.();
       setChatError(error instanceof Error ? error.message : String(error));
+      // Persist partial conversation on error too
+      const id = recipeIdRef.current;
+      if (id && messagesRef.current.length > 0) {
+        saveChatHistoryAction(id, messagesRef.current).catch(() => {});
+      }
     },
   });
+
+  // Keep messagesRef in sync with the latest messages array
+  messagesRef.current = messages;
 
   // Detect when streaming starts
   useEffect(() => {
@@ -137,9 +175,12 @@ export function RecipeChatPanel({
       {/* Message list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            Décris la recette que tu veux créer...
-          </p>
+          <EmptyState
+            icon={MessageSquarePlus}
+            headline={t("empty_state", "chat_headline")}
+            description={t("empty_state", "chat_description")}
+            className="py-8"
+          />
         ) : (
           messages.map((msg) => (
             <div
@@ -212,6 +253,14 @@ export function RecipeChatPanel({
           </div>
         )}
       </div>
+
+      {/* Suggestion chips — visible only on pristine empty state */}
+      {messages.length === 0 && !input.trim() && (
+        <SuggestionChips
+          context={context}
+          onChipClick={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
+        />
+      )}
 
       {/* Stream-level error (distinct from tool errors visible in AI messages) */}
       {chatError && (

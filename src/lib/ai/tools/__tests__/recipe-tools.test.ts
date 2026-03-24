@@ -11,6 +11,7 @@ const mockService = vi.hoisted(() => ({
   removeIngredientFromRecipe: vi.fn(),
   setRecipeSteps: vi.fn(),
   setRecipeDietaryTags: vi.fn(),
+  setRecipeImagePrompt: vi.fn(),
 }));
 
 const mockQueries = vi.hoisted(() => ({
@@ -150,9 +151,16 @@ describe("createRecipeTools", () => {
 
   // ─── searchIngredients ─────────────────────────────────────────────────────
 
-  it("searchIngredients: calls queries.searchIngredients and returns minimal shape", async () => {
+  it("searchIngredients: calls queries.searchIngredients and returns enriched shape", async () => {
     mockQueries.searchIngredients.mockResolvedValue([
-      { id: uuid, name: "Poulet", aisle: { slug: "butcher" } },
+      {
+        id: uuid,
+        name: "Poulet",
+        aisle_id: uuid2,
+        season_start: null,
+        season_end: null,
+        aisle: { id: uuid2, slug: "butcher" },
+      },
     ]);
     const tools = createRecipeTools("user-1", null);
     const result = await tools.searchIngredients.execute(
@@ -160,18 +168,28 @@ describe("createRecipeTools", () => {
       {} as never
     );
     expect(mockQueries.searchIngredients).toHaveBeenCalledWith("poulet", 5);
-    expect(result).toEqual([{ id: uuid, name: "Poulet", aisle: "butcher" }]);
+    expect(result).toEqual([
+      {
+        id: uuid,
+        name: "Poulet",
+        aisle_id: uuid2,
+        aisle: "butcher",
+        season_start: null,
+        season_end: null,
+      },
+    ]);
   });
 
-  it("searchIngredients: returns null aisle when ingredient has no aisle", async () => {
+  it("searchIngredients: returns null aisle_id and aisle when ingredient has no aisle", async () => {
     mockQueries.searchIngredients.mockResolvedValue([
-      { id: uuid, name: "Sel", aisle: null },
+      { id: uuid, name: "Sel", aisle_id: null, season_start: null, season_end: null, aisle: null },
     ]);
     const tools = createRecipeTools("user-1", null);
     const result = (await tools.searchIngredients.execute(
       { query: "sel" },
       {} as never
-    )) as Array<{ aisle: string | null }>;
+    )) as Array<{ aisle_id: string | null; aisle: string | null }>;
+    expect(result[0].aisle_id).toBeNull();
     expect(result[0].aisle).toBeNull();
   });
 
@@ -280,5 +298,36 @@ describe("createRecipeTools", () => {
       [uuid, uuid2]
     );
     expect(result).toEqual({ dietary_tag_ids: [uuid, uuid2] });
+  });
+
+  // ─── generateImage ─────────────────────────────────────────────────────────
+
+  it("generateImage: throws when no recipe id", async () => {
+    const tools = createRecipeTools("user-1", null);
+    await expect(
+      tools.generateImage.execute(
+        { prompt: "A golden roast chicken with herbs" },
+        {} as never
+      )
+    ).rejects.toThrow();
+  });
+
+  it("generateImage: calls setRecipeImagePrompt and returns recipeImageId + prompt", async () => {
+    mockService.setRecipeImagePrompt.mockResolvedValue({ recipeImageId: uuid2 });
+    const tools = createRecipeTools("user-1", uuid);
+    const result = await tools.generateImage.execute(
+      { prompt: "A golden roast chicken with herbs" },
+      {} as never
+    );
+    expect(mockService.setRecipeImagePrompt).toHaveBeenCalledWith(
+      "user-1",
+      uuid,
+      "A golden roast chicken with herbs"
+    );
+    expect(result).toEqual({
+      recipeImageId: uuid2,
+      prompt: "A golden roast chicken with herbs",
+      status: "generating",
+    });
   });
 });

@@ -1,3 +1,18 @@
+const MONTH_NAMES_SHORT = [
+  "", "jan", "fév", "mar", "avr", "mai", "jun",
+  "jul", "aoû", "sep", "oct", "nov", "déc",
+];
+
+export function formatSeasonRange(
+  start: number | null,
+  end: number | null
+): string | null {
+  if (start == null || end == null) return null;
+  const s = MONTH_NAMES_SHORT[start] ?? String(start);
+  const e = MONTH_NAMES_SHORT[end] ?? String(end);
+  return `${s}–${e}`;
+}
+
 const FRACTION_MAP: [number, string][] = [
   [0.125, "⅛"],
   [0.25, "¼"],

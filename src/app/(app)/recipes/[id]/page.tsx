@@ -5,6 +5,7 @@ import {
   getAllDietaryTags,
   getAllAisles,
 } from "@/lib/recipes/queries";
+import { getChatHistory } from "@/lib/chat/service";
 import { RecipeWorkspace } from "@/components/recipes/recipe-workspace";
 
 type RecipeDetailPageProps = {
@@ -17,10 +18,11 @@ export default async function RecipeDetailPage({
   const { user } = await verifySession();
   const { id } = await params;
 
-  const [recipe, dietaryTags, aisles] = await Promise.all([
+  const [recipe, dietaryTags, aisles, chatHistory] = await Promise.all([
     getRecipeById(id),
     getAllDietaryTags(),
     getAllAisles(),
+    getChatHistory(id),
   ]);
 
   if (!recipe || recipe.user_id !== user.id) {
@@ -32,6 +34,7 @@ export default async function RecipeDetailPage({
       initialRecipe={recipe}
       dietaryTags={dietaryTags}
       aisles={aisles}
+      initialChatHistory={chatHistory ?? undefined}
     />
   );
 }

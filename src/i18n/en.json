@@ -25,6 +25,24 @@
     "halal": "Halal",
     "kosher": "Kosher"
   },
+  "suggestion_chips": {
+    "seasonal": "seasonal",
+    "quick": "quick",
+    "healthy": "healthy",
+    "gourmet": "gourmet",
+    "iron_rich": "iron-rich",
+    "protein_rich": "protein-rich",
+    "gluten_free": "gluten-free",
+    "vegetarian": "vegetarian",
+    "batch_cooking": "batch cooking"
+  },
+  "empty_state": {
+    "recipes_headline": "Your library is empty",
+    "recipes_description": "Start by creating your first recipe with the AI assistant.",
+    "recipes_cta": "Create my first recipe",
+    "chat_headline": "What do you want to cook?",
+    "chat_description": "Describe a recipe or pick a suggestion below."
+  },
   "tool_status": {
     "createRecipe": "Creating recipe",
     "setRecipeTitle": "Setting title",
@@ -35,6 +53,14 @@
     "updateIngredient": "Updating ingredient",
     "removeIngredient": "Removing ingredient",
     "setSteps": "Setting steps",
-    "setDietaryTags": "Setting dietary tags"
+    "setDietaryTags": "Setting dietary tags",
+    "generateImage": "Generating image",
+    "addIngredients": "Adding ingredients",
+    "setNutrition": "Nutrition score",
+    "setSeasonality": "Seasonality",
+    "listDietaryTags": "Loading tags",
+    "extractMemoryFact": "Memorizing",
+    "deleteMemoryFact": "Deleting memory",
+    "listMemoryFacts": "Loading memories"
   }
 }

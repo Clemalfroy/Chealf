@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducer, useState, useEffect } from "react";
-import { Clock, Users, Edit2, Trash2, Plus, ImageIcon, Minus } from "lucide-react";
+import { Clock, Users, Edit2, Trash2, Plus, ImageIcon, Minus, RefreshCw, AlertCircle } from "lucide-react";
 import { formatQuantity } from "@/lib/format";
 import { scaleQuantity } from "@/lib/scaling";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,34 @@ import { StepEditor, type EditorStep } from "./step-editor";
 import { TagSelector } from "./tag-selector";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { Leaf, Flame, ChevronDown } from "lucide-react";
+import { formatSeasonRange } from "@/lib/format";
 import type { DietaryTag, Aisle } from "@/db/schema";
 import type { RecipeWithRelations } from "@/lib/recipes/queries";
+import type { NutritionData } from "@/lib/recipes/schemas";
 
 // ─── State ────────────────────────────────────────────────────────────────────
+
+export type ImageStatus = "idle" | "generating" | "ready" | "error";
 
 export type RecipeEditorState = {
   id: string | null;
   title: string;
   servings: number | null;
   prep_time: number | null;
+  season_start: number | null;
+  season_end: number | null;
+  nutrition_score: number | null;
+  nutrition_data: NutritionData | null;
   ingredients: EditorIngredient[];
   steps: EditorStep[];
   dietary_tag_ids: string[];
   isDirty: boolean;
+  // Image
+  image_url: string | null;
+  image_status: ImageStatus;
+  image_prompt: string | null;
+  recipe_image_id: string | null;
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -46,6 +60,11 @@ export type RecipeEditorAction =
   | { type: "SET_STEPS"; payload: EditorStep[] }
   | { type: "TOGGLE_TAG"; tagId: string }
   | { type: "SET_TAGS"; payload: string[] }
+  | { type: "SET_SEASONALITY"; payload: { season_start: number | null; season_end: number | null } }
+  | { type: "SET_NUTRITION"; payload: { nutrition_score: number; nutrition_data: NutritionData } }
+  | { type: "SET_IMAGE_GENERATING"; payload: { recipeImageId: string; prompt: string } }
+  | { type: "SET_IMAGE"; payload: string }
+  | { type: "SET_IMAGE_ERROR" }
   | { type: "LOAD_RECIPE"; payload: RecipeEditorState };
 
 // Keep legacy alias for backwards-compat with reducer tests
@@ -180,6 +199,45 @@ export function recipeEditorReducer(
     case "SET_TAGS":
       return { ...state, dietary_tag_ids: action.payload, isDirty: true };
 
+    case "SET_SEASONALITY":
+      return {
+        ...state,
+        season_start: action.payload.season_start,
+        season_end: action.payload.season_end,
+        isDirty: true,
+      };
+
+    case "SET_NUTRITION":
+      return {
+        ...state,
+        nutrition_score: action.payload.nutrition_score,
+        nutrition_data: action.payload.nutrition_data,
+        isDirty: true,
+      };
+
+    case "SET_IMAGE_GENERATING":
+      return {
+        ...state,
+        image_status: "generating",
+        image_prompt: action.payload.prompt,
+        recipe_image_id: action.payload.recipeImageId,
+      };
+
+    case "SET_IMAGE":
+      return {
+        ...state,
+        image_url: action.payload,
+        image_status: "ready",
+        recipe_image_id: null,
+      };
+
+    case "SET_IMAGE_ERROR":
+      return {
+        ...state,
+        image_status: "error",
+        recipe_image_id: null,
+      };
+
     case "LOAD_RECIPE":
       return { ...action.payload, isDirty: false };
 
@@ -197,10 +255,18 @@ export function buildInitialState(recipe?: RecipeWithRelations): RecipeEditorSta
       title: "",
       servings: null,
       prep_time: null,
+      season_start: null,
+      season_end: null,
+      nutrition_score: null,
+      nutrition_data: null,
       ingredients: [],
       steps: [],
       dietary_tag_ids: [],
       isDirty: false,
+      image_url: null,
+      image_status: "idle",
+      image_prompt: null,
+      recipe_image_id: null,
     };
   }
   return {
@@ -208,6 +274,10 @@ export function buildInitialState(recipe?: RecipeWithRelations): RecipeEditorSta
     title: recipe.title,
     servings: recipe.servings ?? null,
     prep_time: recipe.prep_time ?? null,
+    season_start: recipe.season_start ?? null,
+    season_end: recipe.season_end ?? null,
+    nutrition_score: recipe.nutrition_score ?? null,
+    nutrition_data: (recipe.nutrition_data as NutritionData | null) ?? null,
     ingredients: recipe.recipeIngredients.map((ri) => ({
       tempId: genTempId(),
       ingredient_id: ri.ingredient_id,
@@ -225,6 +295,10 @@ export function buildInitialState(recipe?: RecipeWithRelations): RecipeEditorSta
     })),
     dietary_tag_ids: recipe.recipeDietaryTags.map((rdt) => rdt.dietary_tag_id),
     isDirty: false,
+    image_url: recipe.image_url ?? null,
+    image_status: recipe.image_url ? "ready" : "idle",
+    image_prompt: null,
+    recipe_image_id: null,
   };
 }
 
@@ -242,6 +316,7 @@ type RecipeEditorProps = {
   onSave: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  onRegenerateImage?: () => void;
   isPending?: boolean;
   saveError?: string;
 };
@@ -256,6 +331,7 @@ export function RecipeEditor({
   onSave,
   onCancel,
   onDelete,
+  onRegenerateImage,
   isPending = false,
   saveError,
 }: RecipeEditorProps) {
@@ -263,6 +339,8 @@ export function RecipeEditor({
   const isStreaming = mode === "streaming";
   // In streaming mode: read-only with fade-in animation on updated fields
   const isReadOnly = !isEditing;
+
+  const [nutritionOpen, setNutritionOpen] = useState(false);
 
   // Display-only servings for quantity preview (not saved to DB)
   const [displayServings, setDisplayServings] = useState(state.servings ?? 1);
@@ -284,12 +362,59 @@ export function RecipeEditor({
         </div>
       )}
 
-      {/* Image placeholder */}
-      <div className="flex aspect-[4/3] max-h-64 w-full items-center justify-center rounded-xl bg-muted">
-        <div className="flex flex-col items-center gap-2 text-subtle-foreground">
-          <ImageIcon className="size-8" />
-          <span className="text-xs">Image générée par l&apos;IA</span>
-        </div>
+      {/* Image */}
+      <div className="space-y-2">
+        {state.image_status === "ready" && state.image_url ? (
+          <div className="relative w-full overflow-hidden rounded-xl aspect-[4/3] max-h-64">
+            <img
+              src={state.image_url}
+              alt={state.title || "Recette"}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ) : state.image_status === "generating" ? (
+          <div className="flex aspect-[4/3] max-h-64 w-full items-center justify-center rounded-xl bg-muted">
+            <div className="flex flex-col items-center gap-2 text-subtle-foreground">
+              <RefreshCw className="size-6 animate-spin" />
+              <span className="text-xs">Génération en cours…</span>
+            </div>
+          </div>
+        ) : state.image_status === "error" ? (
+          <div className="flex aspect-[4/3] max-h-64 w-full items-center justify-center rounded-xl bg-muted">
+            <div className="flex flex-col items-center gap-2 text-subtle-foreground">
+              <AlertCircle className="size-6 text-destructive" />
+              <span className="text-xs">Échec de la génération</span>
+              {onRegenerateImage && (
+                <button
+                  type="button"
+                  onClick={onRegenerateImage}
+                  className="mt-1 text-xs underline text-muted-foreground hover:text-foreground"
+                >
+                  Réessayer
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex aspect-[4/3] max-h-64 w-full items-center justify-center rounded-xl bg-muted">
+            <div className="flex flex-col items-center gap-2 text-subtle-foreground">
+              <ImageIcon className="size-8" />
+              <span className="text-xs">Image générée par l&apos;IA</span>
+            </div>
+          </div>
+        )}
+        {/* Regenerate button — only shown in view mode when image exists */}
+        {!isEditing && !isStreaming && state.image_url && onRegenerateImage && (
+          <button
+            type="button"
+            onClick={onRegenerateImage}
+            disabled={state.image_status === "generating"}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className="size-3" />
+            Regénérer l&apos;image
+          </button>
+        )}
       </div>
 
       {/* Title */}
@@ -430,6 +555,64 @@ export function RecipeEditor({
           </div>
         ) : null}
       </div>
+
+      {/* Seasonality + Nutrition (view/streaming only) */}
+      {!isEditing && (
+        <div className="flex flex-wrap gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-fg",
+              isStreaming && "animate-[fadeInUp_300ms_ease-out]"
+            )}
+          >
+            <Leaf className="size-3 text-accent" />
+            {formatSeasonRange(state.season_start, state.season_end) ?? "Toute l'année"}
+          </span>
+          {state.nutrition_score != null && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setNutritionOpen((o) => !o)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  state.nutrition_score >= 70
+                    ? "border-[#4A5D4A]/30 bg-[#4A5D4A]/10 text-[#2D3A2D]"
+                    : state.nutrition_score >= 40
+                    ? "border-amber-400/30 bg-amber-50 text-amber-800"
+                    : "border-red-300/30 bg-red-50 text-red-800",
+                  isStreaming && "animate-[fadeInUp_300ms_ease-out]"
+                )}
+              >
+                <Flame className="size-3" />
+                <span>{state.nutrition_score}/100</span>
+                <span className="text-[10px] text-muted-foreground">estim. IA</span>
+                <ChevronDown
+                  className={cn("size-3 transition-transform", nutritionOpen && "rotate-180")}
+                />
+              </button>
+              {nutritionOpen && state.nutrition_data && (
+                <div className="absolute left-0 top-full z-10 mt-1 min-w-[160px] rounded-lg border border-border bg-card p-3 shadow-md">
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <dt className="text-muted-foreground">Calories</dt>
+                    <dd className="font-mono text-right">{state.nutrition_data.calories} kcal</dd>
+                    <dt className="text-muted-foreground">Protéines</dt>
+                    <dd className="font-mono text-right">{state.nutrition_data.protein} g</dd>
+                    <dt className="text-muted-foreground">Glucides</dt>
+                    <dd className="font-mono text-right">{state.nutrition_data.carbs} g</dd>
+                    <dt className="text-muted-foreground">Lipides</dt>
+                    <dd className="font-mono text-right">{state.nutrition_data.fat} g</dd>
+                    <dt className="text-muted-foreground">Fibres</dt>
+                    <dd className="font-mono text-right">{state.nutrition_data.fiber} g</dd>
+                  </dl>
+                  <p className="mt-2 text-[10px] text-muted-foreground border-t border-border pt-1.5">
+                    Valeurs estimées par l&apos;IA — par portion
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Ingredients */}
       <div className="space-y-3">

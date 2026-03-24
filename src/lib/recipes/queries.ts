@@ -44,6 +44,9 @@ export async function getRecipesByUserId(userId: string) {
       image_url: true,
       prep_time: true,
       servings: true,
+      season_start: true,
+      season_end: true,
+      nutrition_score: true,
       updated_at: true,
     },
     with: {

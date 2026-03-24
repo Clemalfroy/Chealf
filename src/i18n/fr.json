@@ -25,6 +25,24 @@
     "halal": "Halal",
     "kosher": "Casher"
   },
+  "suggestion_chips": {
+    "seasonal": "de saison",
+    "quick": "rapide",
+    "healthy": "sain",
+    "gourmet": "gourmand",
+    "iron_rich": "riche en fer",
+    "protein_rich": "riche en protéines",
+    "gluten_free": "sans gluten",
+    "vegetarian": "végétarien",
+    "batch_cooking": "batch cooking"
+  },
+  "empty_state": {
+    "recipes_headline": "Votre bibliothèque est vide",
+    "recipes_description": "Commencez par créer votre première recette avec l'assistant IA.",
+    "recipes_cta": "Créer ma première recette",
+    "chat_headline": "Que voulez-vous cuisiner ?",
+    "chat_description": "Décrivez une recette ou choisissez une suggestion ci-dessous."
+  },
   "tool_status": {
     "createRecipe": "Création de la recette",
     "setRecipeTitle": "Titre mis à jour",
@@ -35,6 +53,14 @@
     "updateIngredient": "Modification d'un ingrédient",
     "removeIngredient": "Suppression d'un ingrédient",
     "setSteps": "Étapes de préparation",
-    "setDietaryTags": "Régimes alimentaires"
+    "setDietaryTags": "Régimes alimentaires",
+    "generateImage": "Génération de l'image",
+    "addIngredients": "Ajout des ingrédients",
+    "setNutrition": "Score nutritionnel",
+    "setSeasonality": "Saisonnalité",
+    "listDietaryTags": "Chargement des tags",
+    "extractMemoryFact": "Mémorisation",
+    "deleteMemoryFact": "Suppression du souvenir",
+    "listMemoryFacts": "Chargement des souvenirs"
   }
 }

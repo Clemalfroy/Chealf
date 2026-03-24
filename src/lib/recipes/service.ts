@@ -5,14 +5,22 @@ import {
   recipeIngredients,
   recipeSteps,
   recipeDietaryTags,
+  recipeImages,
 } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { generateImage } from "ai";
+import { getImageModel } from "@/lib/ai/provider";
+import { buildImagePrompt } from "@/lib/ai/prompts/image";
+import sharp from "sharp";
+import { intersectSeasons } from "./seasonality";
+import type { SeasonRange } from "./seasonality";
 import type {
   CreateRecipeInput,
   AddIngredientInput,
   SetStepsInput,
   SaveRecipeInput,
   UpdateIngredientInput,
+  NutritionData,
 } from "./schemas";
 
 // Covers both the top-level db client and a transaction object
@@ -34,7 +42,13 @@ async function assertOwnership(userId: string, recipeId: string) {
 
 async function _upsertIngredient(
   tx: DbOrTx,
-  opts: { name: string; ingredient_id?: string; aisle_id?: string }
+  opts: {
+    name: string;
+    ingredient_id?: string;
+    aisle_id?: string;
+    season_start?: number | null;
+    season_end?: number | null;
+  }
 ): Promise<string> {
   if (opts.ingredient_id) return opts.ingredient_id;
 
@@ -46,7 +60,12 @@ async function _upsertIngredient(
 
   const [created] = await tx
     .insert(ingredients)
-    .values({ name: opts.name, aisle_id: opts.aisle_id ?? null })
+    .values({
+      name: opts.name,
+      aisle_id: opts.aisle_id ?? null,
+      season_start: opts.season_start ?? null,
+      season_end: opts.season_end ?? null,
+    })
     .returning({ id: ingredients.id });
   return created.id;
 }
@@ -110,6 +129,29 @@ async function _insertRecipeDietaryTags(
       dietary_tag_id: tagId,
     }))
   ).onConflictDoNothing();
+}
+
+async function _recomputeSeasonality(tx: DbOrTx, recipeId: string): Promise<SeasonRange> {
+  const rows = await tx.query.recipeIngredients.findMany({
+    where: (ri, { eq }) => eq(ri.recipe_id, recipeId),
+    with: {
+      ingredient: { columns: { season_start: true, season_end: true } },
+    },
+  });
+
+  const { season_start, season_end } = intersectSeasons(
+    rows.map((r) => ({
+      season_start: r.ingredient.season_start,
+      season_end: r.ingredient.season_end,
+    }))
+  );
+
+  await tx
+    .update(recipes)
+    .set({ season_start, season_end })
+    .where(eq(recipes.id, recipeId));
+
+  return { season_start, season_end };
 }
 
 // ─── Recipe lifecycle ─────────────────────────────────────────────────────────
@@ -182,13 +224,15 @@ export async function addIngredientToRecipe(
   userId: string,
   recipeId: string,
   data: Omit<AddIngredientInput, "recipeId">
-) {
+): Promise<typeof recipeIngredients.$inferSelect & SeasonRange> {
   await assertOwnership(userId, recipeId);
 
   const ingredientId = await _upsertIngredient(db, {
     name: data.name,
     ingredient_id: data.ingredient_id,
     aisle_id: data.aisle_id,
+    season_start: data.season_start,
+    season_end: data.season_end,
   });
 
   const [row] = await db
@@ -202,14 +246,62 @@ export async function addIngredientToRecipe(
     })
     .onConflictDoNothing()
     .returning();
-  return row;
+
+  const seasonality = await _recomputeSeasonality(db, recipeId);
+  return { ...row, ...seasonality };
+}
+
+export async function addIngredientsToRecipe(
+  userId: string,
+  recipeId: string,
+  items: Array<Omit<AddIngredientInput, "recipeId">>
+): Promise<{ ingredients: Array<{ ingredient_id: string; name: string; quantity_per_person: number; unit: string; scaling_factor: number }> } & SeasonRange> {
+  if (items.length === 0) return { ingredients: [], season_start: null, season_end: null };
+  await assertOwnership(userId, recipeId);
+
+  // Resolve ingredient IDs sequentially — upsert must be serial to avoid
+  // race conditions when two items share the same ingredient name.
+  const resolved: Array<{ ingredient_id: string; name: string; quantity_per_person: number; unit: string; scaling_factor: number }> = [];
+  for (const item of items) {
+    const ingredientId = await _upsertIngredient(db, {
+      name: item.name,
+      ingredient_id: item.ingredient_id,
+      aisle_id: item.aisle_id,
+      season_start: item.season_start,
+      season_end: item.season_end,
+    });
+    resolved.push({
+      ingredient_id: ingredientId,
+      name: item.name,
+      quantity_per_person: item.quantity_per_person,
+      unit: item.unit,
+      scaling_factor: item.scaling_factor,
+    });
+  }
+
+  // Single batch insert for all recipe_ingredients rows
+  await db
+    .insert(recipeIngredients)
+    .values(
+      resolved.map((item) => ({
+        recipe_id: recipeId,
+        ingredient_id: item.ingredient_id,
+        quantity_per_person: item.quantity_per_person,
+        unit: item.unit,
+        scaling_factor: item.scaling_factor,
+      }))
+    )
+    .onConflictDoNothing();
+
+  const seasonality = await _recomputeSeasonality(db, recipeId);
+  return { ingredients: resolved, ...seasonality };
 }
 
 export async function removeIngredientFromRecipe(
   userId: string,
   recipeId: string,
   ingredientId: string
-): Promise<void> {
+): Promise<SeasonRange> {
   await assertOwnership(userId, recipeId);
   await db
     .delete(recipeIngredients)
@@ -219,6 +311,7 @@ export async function removeIngredientFromRecipe(
         eq(recipeIngredients.ingredient_id, ingredientId)
       )
     );
+  return _recomputeSeasonality(db, recipeId);
 }
 
 export async function updateRecipeIngredient(
@@ -279,6 +372,42 @@ export async function setRecipeDietaryTags(
     .where(eq(recipes.id, recipeId));
 }
 
+// ─── Seasonality + nutrition operations ───────────────────────────────────────
+
+export async function setRecipeSeasonality(
+  userId: string,
+  recipeId: string,
+  seasonStart: number | null,
+  seasonEnd: number | null
+): Promise<void> {
+  await assertOwnership(userId, recipeId);
+  await db
+    .update(recipes)
+    .set({
+      season_start: seasonStart,
+      season_end: seasonEnd,
+      updated_at: new Date(),
+    })
+    .where(eq(recipes.id, recipeId));
+}
+
+export async function setRecipeNutrition(
+  userId: string,
+  recipeId: string,
+  score: number,
+  data: NutritionData
+): Promise<void> {
+  await assertOwnership(userId, recipeId);
+  await db
+    .update(recipes)
+    .set({
+      nutrition_score: score,
+      nutrition_data: data,
+      updated_at: new Date(),
+    })
+    .where(eq(recipes.id, recipeId));
+}
+
 // ─── Batch operation (single transaction — used by form save) ─────────────────
 
 export async function saveRecipeFull(
@@ -304,6 +433,10 @@ export async function saveRecipeFull(
           title: data.title,
           servings: data.servings ?? null,
           prep_time: data.prep_time ?? null,
+          season_start: data.season_start ?? null,
+          season_end: data.season_end ?? null,
+          nutrition_score: data.nutrition_score ?? null,
+          nutrition_data: data.nutrition_data ?? null,
           updated_at: new Date(),
         })
         .where(eq(recipes.id, recipeId));
@@ -327,6 +460,10 @@ export async function saveRecipeFull(
           title: data.title,
           servings: data.servings ?? null,
           prep_time: data.prep_time ?? null,
+          season_start: data.season_start ?? null,
+          season_end: data.season_end ?? null,
+          nutrition_score: data.nutrition_score ?? null,
+          nutrition_data: data.nutrition_data ?? null,
         })
         .returning({ id: recipes.id });
       recipeId = recipe.id;
@@ -336,9 +473,103 @@ export async function saveRecipeFull(
     await _insertRecipeIngredients(tx, recipeId, data.ingredients);
     await _insertRecipeSteps(tx, recipeId, data.steps);
     await _insertRecipeDietaryTags(tx, recipeId, data.dietary_tag_ids);
+    await _recomputeSeasonality(tx, recipeId);
 
     return { id: recipeId };
   });
+}
+
+// ─── Image operations ─────────────────────────────────────────────────────────
+
+export async function setRecipeImagePrompt(
+  userId: string,
+  recipeId: string,
+  prompt: string
+): Promise<{ recipeImageId: string }> {
+  await assertOwnership(userId, recipeId);
+
+  // Deactivate previous active images
+  await db
+    .update(recipeImages)
+    .set({ is_active: false, updated_at: new Date() })
+    .where(
+      and(eq(recipeImages.recipe_id, recipeId), eq(recipeImages.is_active, true))
+    );
+
+  const [row] = await db
+    .insert(recipeImages)
+    .values({
+      recipe_id: recipeId,
+      user_id: userId,
+      prompt,
+      status: "generating",
+      is_active: true,
+    })
+    .returning({ id: recipeImages.id });
+
+  return { recipeImageId: row.id };
+}
+
+export async function generateRecipeImage(
+  userId: string,
+  recipeImageId: string,
+  uploadImage: (buffer: Buffer, storagePath: string) => Promise<string>
+): Promise<{ imageUrl: string }> {
+  // Load the recipe_images row and verify ownership
+  const row = await db.query.recipeImages.findFirst({
+    where: (ri, { eq, and }) =>
+      and(eq(ri.id, recipeImageId), eq(ri.user_id, userId)),
+  });
+  if (!row) throw new Error("Image record not found or access denied");
+
+  // Server-side rate limit: reject if another image is already generating for this recipe
+  const generating = await db.query.recipeImages.findFirst({
+    where: (ri, { eq, and, ne }) =>
+      and(
+        eq(ri.recipe_id, row.recipe_id),
+        eq(ri.status, "generating"),
+        ne(ri.id, recipeImageId)
+      ),
+    columns: { id: true },
+  });
+  if (generating) {
+    throw new Error("Image generation already in progress for this recipe");
+  }
+
+  try {
+    const result = await generateImage({
+      model: getImageModel(),
+      prompt: buildImagePrompt(row.prompt),
+      size: "1792x1024",
+    });
+
+    const webpBuffer = await sharp(result.image.uint8Array)
+      .webp({ quality: 85 })
+      .toBuffer();
+
+    const storagePath = `${userId}/${row.recipe_id}/${recipeImageId}.webp`;
+    const imageUrl = await uploadImage(webpBuffer, storagePath);
+
+    await db
+      .update(recipeImages)
+      .set({ image_url: imageUrl, status: "ready", updated_at: new Date() })
+      .where(eq(recipeImages.id, recipeImageId));
+
+    await db
+      .update(recipes)
+      .set({ image_url: imageUrl, updated_at: new Date() })
+      .where(eq(recipes.id, row.recipe_id));
+
+    return { imageUrl };
+  } catch (err) {
+    console.error("[generateRecipeImage] failed:", err);
+    await db
+      .update(recipeImages)
+      .set({ status: "error", updated_at: new Date() })
+      .where(eq(recipeImages.id, recipeImageId));
+    const message = err instanceof Error ? err.message : "Image generation failed";
+    throw new Error(`Image generation failed: ${message}`);
+  }
 }
 
 // ─── Consistency validation ────────────────────────────────────────────────────

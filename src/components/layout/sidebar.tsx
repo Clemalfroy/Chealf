@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChefHat, CalendarDays, ShoppingCart, Home, LogOut } from "lucide-react";
+import { ChefHat, CalendarDays, ShoppingCart, Home, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/hooks/use-user";
 import { logout } from "@/app/(auth)/actions";
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/recipes", label: "Recettes", icon: ChefHat },
   { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/shopping", label: "Courses", icon: ShoppingCart },
+  { href: "/settings", label: "Paramètres", icon: Settings },
 ];
 
 export function Sidebar() {

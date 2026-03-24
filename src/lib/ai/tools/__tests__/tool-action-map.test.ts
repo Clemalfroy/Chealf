@@ -10,10 +10,18 @@ const emptyState: RecipeEditorState = {
   title: "",
   servings: null,
   prep_time: null,
+  season_start: null,
+  season_end: null,
+  nutrition_score: null,
+  nutrition_data: null,
   ingredients: [],
   steps: [],
   dietary_tag_ids: [],
   isDirty: false,
+  image_url: null,
+  image_status: "idle",
+  image_prompt: null,
+  recipe_image_id: null,
 };
 
 const stateWithIngredient: RecipeEditorState = {
@@ -29,6 +37,10 @@ const stateWithIngredient: RecipeEditorState = {
       scaling_factor: 1,
     },
   ],
+  image_url: null,
+  image_status: "idle",
+  image_prompt: null,
+  recipe_image_id: null,
 };
 
 describe("mapToolResultToAction", () => {
@@ -108,7 +120,7 @@ describe("mapToolResultToAction", () => {
 
   // ─── addIngredient ─────────────────────────────────────────────────────────
 
-  it("addIngredient → ADD_INGREDIENT with generated tempId", () => {
+  it("addIngredient → [ADD_INGREDIENT, SET_SEASONALITY] with computed season", () => {
     const result = mapToolResultToAction(
       "addIngredient",
       {
@@ -117,13 +129,44 @@ describe("mapToolResultToAction", () => {
         quantity_per_person: 80,
         unit: "g",
         scaling_factor: 1.0,
+        season_start: null,
+        season_end: null,
       },
       emptyState
-    ) as { type: string; payload: { tempId: string; ingredient_id: string } };
-    expect(result.type).toBe("ADD_INGREDIENT");
-    expect(result.payload.ingredient_id).toBe(uuid2);
-    expect(result.payload.name).toBe("Riz");
-    expect(result.payload.tempId).toMatch(/^tool-/);
+    ) as Array<{ type: string; payload?: unknown; tempId?: string }>;
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0].type).toBe("ADD_INGREDIENT");
+    expect((result[0].payload as { ingredient_id: string }).ingredient_id).toBe(uuid2);
+    expect((result[0].payload as { tempId: string }).tempId).toMatch(/^tool-/);
+    expect(result[1].type).toBe("SET_SEASONALITY");
+    expect(result[1].payload).toEqual({ season_start: null, season_end: null });
+  });
+
+  // ─── addIngredients ────────────────────────────────────────────────────────
+
+  it("addIngredients → [ADD_INGREDIENT×N, SET_SEASONALITY] with computed season", () => {
+    const result = mapToolResultToAction(
+      "addIngredients",
+      {
+        ingredients: [
+          { ingredient_id: uuid1, name: "Riz", quantity_per_person: 80, unit: "g", scaling_factor: 1.0 },
+          { ingredient_id: uuid2, name: "Tomate", quantity_per_person: 1, unit: "unité", scaling_factor: 0.6 },
+        ],
+        season_start: 6,
+        season_end: 9,
+      },
+      emptyState
+    ) as Array<{ type: string; payload: { tempId?: string; ingredient_id?: string; season_start?: number | null; season_end?: number | null } }>;
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(3); // 2 ingredients + 1 seasonality
+    expect(result[0].type).toBe("ADD_INGREDIENT");
+    expect(result[0].payload.ingredient_id).toBe(uuid1);
+    expect(result[0].payload.tempId).toMatch(/^tool-/);
+    expect(result[1].type).toBe("ADD_INGREDIENT");
+    expect(result[1].payload.ingredient_id).toBe(uuid2);
+    expect(result[0].payload.tempId).not.toBe(result[1].payload.tempId);
+    expect(result[2].type).toBe("SET_SEASONALITY");
+    expect(result[2].payload).toEqual({ season_start: 6, season_end: 9 });
   });
 
   // ─── updateIngredient ──────────────────────────────────────────────────────
@@ -165,20 +208,23 @@ describe("mapToolResultToAction", () => {
 
   // ─── removeIngredient ──────────────────────────────────────────────────────
 
-  it("removeIngredient → REMOVE_INGREDIENT resolved by ingredient_id", () => {
+  it("removeIngredient → [REMOVE_INGREDIENT, SET_SEASONALITY] resolved by ingredient_id", () => {
     const result = mapToolResultToAction(
       "removeIngredient",
-      { ingredient_id: uuid2 },
+      { ingredient_id: uuid2, season_start: null, season_end: null },
       stateWithIngredient
-    ) as { type: string; tempId: string };
-    expect(result.type).toBe("REMOVE_INGREDIENT");
-    expect(result.tempId).toBe("tmp-1");
+    ) as Array<{ type: string; tempId?: string; payload?: unknown }>;
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0].type).toBe("REMOVE_INGREDIENT");
+    expect(result[0].tempId).toBe("tmp-1");
+    expect(result[1].type).toBe("SET_SEASONALITY");
+    expect(result[1].payload).toEqual({ season_start: null, season_end: null });
   });
 
   it("removeIngredient → returns null when ingredient_id not found", () => {
     const result = mapToolResultToAction(
       "removeIngredient",
-      { ingredient_id: "00000000-0000-0000-0000-000000000000" },
+      { ingredient_id: "00000000-0000-0000-0000-000000000000", season_start: null, season_end: null },
       emptyState
     );
     expect(result).toBeNull();
@@ -215,7 +261,22 @@ describe("mapToolResultToAction", () => {
     expect(result).toEqual({ type: "SET_TAGS", payload: [uuid1, uuid2] });
   });
 
-  // ─── searchIngredients ─────────────────────────────────────────────────────
+  // ─── setNutrition ──────────────────────────────────────────────────────────
+
+  it("setNutrition → SET_NUTRITION with score and data", () => {
+    const nutritionData = { calories: 450, protein: 25, carbs: 30, fat: 20, fiber: 8 };
+    const result = mapToolResultToAction(
+      "setNutrition",
+      { nutrition_score: 72, nutrition_data: nutritionData },
+      emptyState
+    );
+    expect(result).toEqual({
+      type: "SET_NUTRITION",
+      payload: { nutrition_score: 72, nutrition_data: nutritionData },
+    });
+  });
+
+  // ─── informational / memory tools → null ───────────────────────────────────
 
   it("searchIngredients → returns null (informational only)", () => {
     const result = mapToolResultToAction(
@@ -224,6 +285,56 @@ describe("mapToolResultToAction", () => {
       emptyState
     );
     expect(result).toBeNull();
+  });
+
+  it("listDietaryTags → returns null (informational only)", () => {
+    const result = mapToolResultToAction(
+      "listDietaryTags",
+      [{ id: uuid1, slug: "vegetarian" }],
+      emptyState
+    );
+    expect(result).toBeNull();
+  });
+
+  it("extractMemoryFact → returns null (no recipe state change)", () => {
+    const result = mapToolResultToAction(
+      "extractMemoryFact",
+      { id: uuid1, content: "Allergique aux noix", category: "allergy" },
+      emptyState
+    );
+    expect(result).toBeNull();
+  });
+
+  it("deleteMemoryFact → returns null (no recipe state change)", () => {
+    const result = mapToolResultToAction(
+      "deleteMemoryFact",
+      { deleted: true },
+      emptyState
+    );
+    expect(result).toBeNull();
+  });
+
+  it("listMemoryFacts → returns null (informational only)", () => {
+    const result = mapToolResultToAction(
+      "listMemoryFacts",
+      [{ id: uuid1, content: "Végétarien", category: "diet" }],
+      emptyState
+    );
+    expect(result).toBeNull();
+  });
+
+  // ─── generateImage ─────────────────────────────────────────────────────────
+
+  it("generateImage → returns SET_IMAGE_GENERATING with recipeImageId and prompt", () => {
+    const result = mapToolResultToAction(
+      "generateImage",
+      { recipeImageId: uuid1, prompt: "A bowl of creamy soup", status: "generating" },
+      emptyState
+    );
+    expect(result).toEqual({
+      type: "SET_IMAGE_GENERATING",
+      payload: { recipeImageId: uuid1, prompt: "A bowl of creamy soup" },
+    });
   });
 
   // ─── unknown tool ──────────────────────────────────────────────────────────

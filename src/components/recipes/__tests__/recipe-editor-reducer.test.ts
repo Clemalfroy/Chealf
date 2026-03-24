@@ -8,6 +8,8 @@ vi.mock("next/navigation", () => ({ useRouter: vi.fn(() => ({ push: vi.fn() })) 
 vi.mock("@/app/(app)/recipes/actions", () => ({
   saveRecipeAction: vi.fn(),
   deleteRecipeAction: vi.fn(),
+  generateRecipeImageAction: vi.fn(),
+  setRecipeImagePromptAction: vi.fn(),
 }));
 
 import {
@@ -23,10 +25,18 @@ function makeState(overrides?: Partial<RecipeEditorState>): RecipeEditorState {
     title: "",
     servings: null,
     prep_time: null,
+    season_start: null,
+    season_end: null,
+    nutrition_score: null,
+    nutrition_data: null,
     ingredients: [],
     steps: [],
     dietary_tag_ids: [],
     isDirty: false,
+    image_url: null,
+    image_status: "idle",
+    image_prompt: null,
+    recipe_image_id: null,
     ...overrides,
   };
 }
@@ -372,10 +382,18 @@ describe("LOAD_RECIPE", () => {
       title: "Poulet rôti",
       servings: 4,
       prep_time: 30,
+      season_start: null,
+      season_end: null,
+      nutrition_score: null,
+      nutrition_data: null,
       ingredients: [makeIngredient()],
       steps: [makeStep()],
       dietary_tag_ids: ["tag-1"],
       isDirty: false,
+      image_url: null,
+      image_status: "idle",
+      image_prompt: null,
+      recipe_image_id: null,
     };
     const state = recipeEditorReducer(dirty, {
       type: "LOAD_RECIPE",
@@ -395,5 +413,128 @@ describe("LOAD_RECIPE", () => {
       payload: loaded,
     });
     expect(state.isDirty).toBe(false);
+  });
+});
+
+// ─── Seasonality ──────────────────────────────────────────────────────────────
+
+describe("SET_SEASONALITY", () => {
+  it("sets season_start and season_end", () => {
+    const state = recipeEditorReducer(makeState(), {
+      type: "SET_SEASONALITY",
+      payload: { season_start: 6, season_end: 9 },
+    });
+    expect(state.season_start).toBe(6);
+    expect(state.season_end).toBe(9);
+    expect(state.isDirty).toBe(true);
+  });
+
+  it("accepts null values (clearing seasonality)", () => {
+    const initial = makeState({ season_start: 6, season_end: 9 });
+    const state = recipeEditorReducer(initial, {
+      type: "SET_SEASONALITY",
+      payload: { season_start: null, season_end: null },
+    });
+    expect(state.season_start).toBeNull();
+    expect(state.season_end).toBeNull();
+  });
+
+  it("handles cross-year range (e.g. nov–feb)", () => {
+    const state = recipeEditorReducer(makeState(), {
+      type: "SET_SEASONALITY",
+      payload: { season_start: 11, season_end: 2 },
+    });
+    expect(state.season_start).toBe(11);
+    expect(state.season_end).toBe(2);
+  });
+});
+
+// ─── Nutrition ────────────────────────────────────────────────────────────────
+
+describe("SET_NUTRITION", () => {
+  const nutritionData = { calories: 450, protein: 25, carbs: 30, fat: 20, fiber: 8 };
+
+  it("sets nutrition_score and nutrition_data", () => {
+    const state = recipeEditorReducer(makeState(), {
+      type: "SET_NUTRITION",
+      payload: { nutrition_score: 72, nutrition_data: nutritionData },
+    });
+    expect(state.nutrition_score).toBe(72);
+    expect(state.nutrition_data).toEqual(nutritionData);
+    expect(state.isDirty).toBe(true);
+  });
+
+  it("overwrites existing nutrition values", () => {
+    const initial = makeState({
+      nutrition_score: 50,
+      nutrition_data: { calories: 300, protein: 10, carbs: 40, fat: 10, fiber: 3 },
+    });
+    const state = recipeEditorReducer(initial, {
+      type: "SET_NUTRITION",
+      payload: { nutrition_score: 80, nutrition_data: nutritionData },
+    });
+    expect(state.nutrition_score).toBe(80);
+    expect(state.nutrition_data?.calories).toBe(450);
+  });
+});
+
+// ─── Image ─────────────────────────────────────────────────────────────────────
+
+const imageId = "550e8400-e29b-41d4-a716-446655440099";
+
+describe("SET_IMAGE_GENERATING", () => {
+  it("sets status to generating and stores imageId + prompt", () => {
+    const state = recipeEditorReducer(makeState(), {
+      type: "SET_IMAGE_GENERATING",
+      payload: { recipeImageId: imageId, prompt: "A golden roast chicken" },
+    });
+    expect(state.image_status).toBe("generating");
+    expect(state.image_prompt).toBe("A golden roast chicken");
+    expect(state.recipe_image_id).toBe(imageId);
+  });
+
+  it("does not set isDirty", () => {
+    const state = recipeEditorReducer(makeState(), {
+      type: "SET_IMAGE_GENERATING",
+      payload: { recipeImageId: imageId, prompt: "prompt" },
+    });
+    expect(state.isDirty).toBe(false);
+  });
+});
+
+describe("SET_IMAGE", () => {
+  it("sets image_url, status ready, clears recipe_image_id", () => {
+    const initial = makeState({
+      image_status: "generating",
+      recipe_image_id: imageId,
+    });
+    const state = recipeEditorReducer(initial, {
+      type: "SET_IMAGE",
+      payload: "https://cdn.example.com/image.webp",
+    });
+    expect(state.image_url).toBe("https://cdn.example.com/image.webp");
+    expect(state.image_status).toBe("ready");
+    expect(state.recipe_image_id).toBeNull();
+  });
+});
+
+describe("SET_IMAGE_ERROR", () => {
+  it("sets status to error and clears recipe_image_id", () => {
+    const initial = makeState({
+      image_status: "generating",
+      recipe_image_id: imageId,
+    });
+    const state = recipeEditorReducer(initial, { type: "SET_IMAGE_ERROR" });
+    expect(state.image_status).toBe("error");
+    expect(state.recipe_image_id).toBeNull();
+  });
+
+  it("does not clear existing image_url", () => {
+    const initial = makeState({
+      image_url: "https://cdn.example.com/old.webp",
+      image_status: "generating",
+    });
+    const state = recipeEditorReducer(initial, { type: "SET_IMAGE_ERROR" });
+    expect(state.image_url).toBe("https://cdn.example.com/old.webp");
   });
 });

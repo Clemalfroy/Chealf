@@ -33,6 +33,27 @@ type SetStepsAction = {
   }>;
 };
 type SetTagsAction = { type: "SET_TAGS"; payload: string[] };
+type SetSeasonalityAction = {
+  type: "SET_SEASONALITY";
+  payload: { season_start: number | null; season_end: number | null };
+};
+type SetNutritionAction = {
+  type: "SET_NUTRITION";
+  payload: {
+    nutrition_score: number;
+    nutrition_data: {
+      calories: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+      fiber: number;
+    };
+  };
+};
+type SetImageGeneratingAction = {
+  type: "SET_IMAGE_GENERATING";
+  payload: { recipeImageId: string; prompt: string };
+};
 
 export type MappedAction =
   | SetIdAction
@@ -43,7 +64,10 @@ export type MappedAction =
   | UpdateIngredientAction
   | RemoveIngredientAction
   | SetStepsAction
-  | SetTagsAction;
+  | SetTagsAction
+  | SetSeasonalityAction
+  | SetNutritionAction
+  | SetImageGeneratingAction;
 
 let tempIdCounter = 1000; // start high to avoid collisions with existing tempIds
 function genToolTempId() {
@@ -83,18 +107,52 @@ export function mapToolResultToAction(
     case "setRecipePrepTime":
       return { type: "SET_PREP_TIME", payload: r.prep_time as number };
 
-    case "addIngredient":
-      return {
-        type: "ADD_INGREDIENT",
+    case "addIngredient": {
+      const actions: MappedAction[] = [
+        {
+          type: "ADD_INGREDIENT",
+          payload: {
+            tempId: genToolTempId(),
+            ingredient_id: r.ingredient_id as string,
+            name: r.name as string,
+            quantity_per_person: r.quantity_per_person as number,
+            unit: r.unit as string,
+            scaling_factor: r.scaling_factor as number,
+          },
+        },
+        {
+          type: "SET_SEASONALITY",
+          payload: {
+            season_start: r.season_start as number | null,
+            season_end: r.season_end as number | null,
+          },
+        },
+      ];
+      return actions;
+    }
+
+    case "addIngredients": {
+      const { ingredients, season_start, season_end } = result as {
+        ingredients: Array<{ ingredient_id: string; name: string; quantity_per_person: number; unit: string; scaling_factor: number }>;
+        season_start: number | null;
+        season_end: number | null;
+      };
+      const ingredientActions: MappedAction[] = ingredients.map((item) => ({
+        type: "ADD_INGREDIENT" as const,
         payload: {
           tempId: genToolTempId(),
-          ingredient_id: r.ingredient_id as string,
-          name: r.name as string,
-          quantity_per_person: r.quantity_per_person as number,
-          unit: r.unit as string,
-          scaling_factor: r.scaling_factor as number,
+          ingredient_id: item.ingredient_id,
+          name: item.name,
+          quantity_per_person: item.quantity_per_person,
+          unit: item.unit,
+          scaling_factor: item.scaling_factor,
         },
-      };
+      }));
+      return [
+        ...ingredientActions,
+        { type: "SET_SEASONALITY", payload: { season_start, season_end } },
+      ];
+    }
 
     case "updateIngredient": {
       const ingredientId = r.ingredient_id as string;
@@ -114,7 +172,16 @@ export function mapToolResultToAction(
       const ingredientId = r.ingredient_id as string;
       const ing = state.ingredients.find((i) => i.ingredient_id === ingredientId);
       if (!ing) return null;
-      return { type: "REMOVE_INGREDIENT", tempId: ing.tempId };
+      return [
+        { type: "REMOVE_INGREDIENT", tempId: ing.tempId },
+        {
+          type: "SET_SEASONALITY",
+          payload: {
+            season_start: r.season_start as number | null,
+            season_end: r.season_end as number | null,
+          },
+        },
+      ];
     }
 
     case "setSteps": {
@@ -133,8 +200,36 @@ export function mapToolResultToAction(
     case "setDietaryTags":
       return { type: "SET_TAGS", payload: r.dietary_tag_ids as string[] };
 
-    // searchIngredients is informational only — no state update needed
+    case "setNutrition":
+      return {
+        type: "SET_NUTRITION",
+        payload: {
+          nutrition_score: r.nutrition_score as number,
+          nutrition_data: r.nutrition_data as {
+            calories: number;
+            protein: number;
+            carbs: number;
+            fat: number;
+            fiber: number;
+          },
+        },
+      };
+
+    case "generateImage":
+      return {
+        type: "SET_IMAGE_GENERATING",
+        payload: {
+          recipeImageId: r.recipeImageId as string,
+          prompt: r.prompt as string,
+        },
+      };
+
+    // Informational tools — no recipe state update needed
     case "searchIngredients":
+    case "listDietaryTags":
+    case "listMemoryFacts":
+    case "extractMemoryFact":
+    case "deleteMemoryFact":
       return null;
 
     default:
